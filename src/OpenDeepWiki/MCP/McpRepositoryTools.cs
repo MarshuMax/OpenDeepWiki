@@ -236,11 +236,10 @@ public class McpRepositoryTools
         if (repository == null)
             return JsonSerializer.Serialize(new { error = true, message = $"Repository {resolvedOwner}/{resolvedName} not found" });
 
-        var repoPath = BuildRepositoryPath(repoOptions.Value, resolvedOwner!, resolvedName!);
-        if (!Directory.Exists(repoPath))
+        var gitTool = CreateGitTool(repoOptions.Value, resolvedOwner!, resolvedName!);
+        if (gitTool == null)
             return JsonSerializer.Serialize(new { error = true, message = "Repository workspace not found on server" });
 
-        var gitTool = new GitTool(repoPath);
         var content = await gitTool.ReadAsync(path, offset, limit, cancellationToken);
 
         return JsonSerializer.Serialize(new
@@ -248,6 +247,233 @@ public class McpRepositoryTools
             repository = $"{resolvedOwner}/{resolvedName}",
             path,
             content
+        });
+    }
+
+
+    [McpServerTool, Description("List all available documentation paths in the wiki catalog. Call this first to discover valid paths before using ReadDoc.")]
+    public static async Task<string> ListDocs(
+        IContext context,
+        McpServer mcpServer,
+        [Description("Language code (default: en)")] string language = "en",
+        CancellationToken cancellationToken = default)
+    {
+        var repositoryScopeError = ValidateAndResolveRepositoryScope(mcpServer, out var resolvedOwner, out var resolvedName);
+        if (repositoryScopeError != null)
+            return JsonSerializer.Serialize(new { error = true, message = repositoryScopeError });
+
+        var repository = await context.Repositories
+            .FirstOrDefaultAsync(r => r.OrgName == resolvedOwner && r.RepoName == resolvedName && !r.IsDeleted, cancellationToken);
+
+        if (repository == null)
+            return JsonSerializer.Serialize(new { error = true, message = $"Repository {resolvedOwner}/{resolvedName} not found" });
+
+        var branch = await context.RepositoryBranches
+            .FirstOrDefaultAsync(b => b.RepositoryId == repository.Id && !b.IsDeleted, cancellationToken);
+
+        if (branch == null)
+            return JsonSerializer.Serialize(new { error = true, message = "No branch found for this repository" });
+
+        var branchLanguage = await context.BranchLanguages
+            .FirstOrDefaultAsync(bl => bl.RepositoryBranchId == branch.Id &&
+                                       bl.LanguageCode == language && !bl.IsDeleted, cancellationToken);
+
+        if (branchLanguage == null)
+            return JsonSerializer.Serialize(new { error = true, message = $"No documentation in language '{language}'" });
+
+        var catalogs = await context.DocCatalogs
+            .Where(c => c.BranchLanguageId == branchLanguage.Id &&
+                        !c.IsDeleted &&
+                        !string.IsNullOrEmpty(c.DocFileId))
+            .OrderBy(c => c.Order)
+            .Select(c => new { c.Title, c.Path })
+            .ToListAsync(cancellationToken);
+
+        return JsonSerializer.Serialize(new
+        {
+            repository = $"{resolvedOwner}/{resolvedName}",
+            branch = branch.BranchName,
+            language,
+            documentCount = catalogs.Count,
+            documents = catalogs
+        });
+    }
+
+    [McpServerTool, Description("Read generated documentation content by path. Returns documentation text with line numbers and the list of source code files that were analyzed to generate it.")]
+    public static async Task<string> ReadDoc(
+        IContext context,
+        McpServer mcpServer,
+        [Description("Document path from the wiki catalog (e.g. 'README', 'src/Auth/Overview')")] string path,
+        [Description("Language code (default: en)")] string language = "en",
+        [Description("Starting line number (1-based). Default: 1")] int startLine = 1,
+        [Description("Ending line number (1-based, inclusive). Default: 200, max range: 200 lines")] int endLine = 200,
+        CancellationToken cancellationToken = default)
+    {
+        var repositoryScopeError = ValidateAndResolveRepositoryScope(mcpServer, out var resolvedOwner, out var resolvedName);
+        if (repositoryScopeError != null)
+            return JsonSerializer.Serialize(new { error = true, message = repositoryScopeError });
+
+        if (string.IsNullOrWhiteSpace(path))
+            return JsonSerializer.Serialize(new { error = true, message = "Document path is required" });
+
+        if (startLine < 1)
+            return JsonSerializer.Serialize(new { error = true, message = "startLine must be >= 1" });
+
+        if (endLine < startLine)
+            return JsonSerializer.Serialize(new { error = true, message = "endLine must be >= startLine" });
+
+        if (endLine - startLine > 200)
+            return JsonSerializer.Serialize(new { error = true, message = "Maximum 200 lines per read; narrow the range" });
+
+        var repository = await context.Repositories
+            .FirstOrDefaultAsync(r => r.OrgName == resolvedOwner && r.RepoName == resolvedName && !r.IsDeleted, cancellationToken);
+
+        if (repository == null)
+            return JsonSerializer.Serialize(new { error = true, message = $"Repository {resolvedOwner}/{resolvedName} not found" });
+
+        var branch = await context.RepositoryBranches
+            .FirstOrDefaultAsync(b => b.RepositoryId == repository.Id && !b.IsDeleted, cancellationToken);
+
+        if (branch == null)
+            return JsonSerializer.Serialize(new { error = true, message = "No branch found for this repository" });
+
+        var branchLanguage = await context.BranchLanguages
+            .FirstOrDefaultAsync(bl => bl.RepositoryBranchId == branch.Id &&
+                                       bl.LanguageCode == language && !bl.IsDeleted, cancellationToken);
+
+        if (branchLanguage == null)
+            return JsonSerializer.Serialize(new { error = true, message = $"No documentation in language '{language}'" });
+
+        var catalog = await context.DocCatalogs
+            .FirstOrDefaultAsync(c => c.BranchLanguageId == branchLanguage.Id &&
+                                       c.Path == path && !c.IsDeleted, cancellationToken);
+
+        if (catalog == null)
+            return JsonSerializer.Serialize(new { error = true, message = $"Document '{path}' not found in catalog" });
+
+        if (string.IsNullOrEmpty(catalog.DocFileId))
+            return JsonSerializer.Serialize(new { error = true, message = $"Document '{path}' has no content" });
+
+        var docFile = await context.DocFiles
+            .FirstOrDefaultAsync(d => d.Id == catalog.DocFileId && !d.IsDeleted, cancellationToken);
+
+        if (docFile == null)
+            return JsonSerializer.Serialize(new { error = true, message = $"Document '{path}' content not found" });
+
+        var allLines = docFile.Content.Split('\n');
+        var totalLines = allLines.Length;
+        var actualEndLine = Math.Min(endLine, totalLines);
+
+        if (startLine > totalLines)
+            return JsonSerializer.Serialize(new { error = true, message = $"startLine ({startLine}) exceeds total lines ({totalLines})" });
+
+        var selectedLines = allLines.Skip(startLine - 1).Take(actualEndLine - startLine + 1);
+        var content = string.Join("\n", selectedLines);
+
+        List<string>? sourceFiles = null;
+        if (!string.IsNullOrEmpty(docFile.SourceFiles))
+        {
+            try { sourceFiles = JsonSerializer.Deserialize<List<string>>(docFile.SourceFiles); }
+            catch { }
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            repository = $"{resolvedOwner}/{resolvedName}",
+            branch = branch.BranchName,
+            language,
+            path,
+            startLine,
+            endLine = actualEndLine,
+            totalLines,
+            content,
+            sourceFiles
+        });
+    }
+
+    [McpServerTool, Description("List files in the repository matching a glob pattern. Respects .gitignore rules and hides hidden directories.")]
+    public static async Task<string> ListFiles(
+        IContext context,
+        McpServer mcpServer,
+        IOptions<RepositoryAnalyzerOptions> repoOptions,
+        [Description("Glob pattern (e.g. '*.cs', 'src/**/*.ts', '**/*.json'). Default: all non-ignored files")] string glob = "",
+        [Description("Maximum files to return (default: 50, max: 200)")] int maxResults = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var repositoryScopeError = ValidateAndResolveRepositoryScope(mcpServer, out var resolvedOwner, out var resolvedName);
+        if (repositoryScopeError != null)
+            return JsonSerializer.Serialize(new { error = true, message = repositoryScopeError });
+
+        if (maxResults <= 0) maxResults = 50;
+        if (maxResults > 200) maxResults = 200;
+
+        var repository = await context.Repositories
+            .FirstOrDefaultAsync(r => r.OrgName == resolvedOwner && r.RepoName == resolvedName && !r.IsDeleted, cancellationToken);
+
+        if (repository == null)
+            return JsonSerializer.Serialize(new { error = true, message = $"Repository {resolvedOwner}/{resolvedName} not found" });
+
+        var gitTool = CreateGitTool(repoOptions.Value, resolvedOwner!, resolvedName!);
+        if (gitTool == null)
+            return JsonSerializer.Serialize(new { error = true, message = "Repository workspace not found on server" });
+
+        var files = await gitTool.ListFilesAsync(glob, maxResults, cancellationToken);
+
+        return JsonSerializer.Serialize(new
+        {
+            repository = $"{resolvedOwner}/{resolvedName}",
+            glob = string.IsNullOrEmpty(glob) ? "*" : glob,
+            fileCount = files.Length,
+            files
+        });
+    }
+
+    [McpServerTool, Description("Search for patterns in repository source files using regex. Returns matching lines with file paths, line numbers, and surrounding context.")]
+    public static async Task<string> Grep(
+        IContext context,
+        McpServer mcpServer,
+        IOptions<RepositoryAnalyzerOptions> repoOptions,
+        [Description("Regex pattern to search for (e.g. 'class\\s+\\w+', 'TODO|FIXME', 'function\\s+\\w+\\(')")] string pattern,
+        [Description("Glob pattern to filter files (e.g. '*.cs', '*.ts', '**/*.json'). Default: all text files")] string glob = "",
+        [Description("Case-sensitive search. Default: false")] bool caseSensitive = false,
+        [Description("Number of context lines around each match. Default: 2")] int contextLines = 2,
+        [Description("Maximum results to return (default: 30, max: 100)")] int maxResults = 30,
+        CancellationToken cancellationToken = default)
+    {
+        var repositoryScopeError = ValidateAndResolveRepositoryScope(mcpServer, out var resolvedOwner, out var resolvedName);
+        if (repositoryScopeError != null)
+            return JsonSerializer.Serialize(new { error = true, message = repositoryScopeError });
+
+        if (string.IsNullOrWhiteSpace(pattern))
+            return JsonSerializer.Serialize(new { error = true, message = "Search pattern is required" });
+
+        if (maxResults <= 0) maxResults = 30;
+        if (maxResults > 100) maxResults = 100;
+
+        var repository = await context.Repositories
+            .FirstOrDefaultAsync(r => r.OrgName == resolvedOwner && r.RepoName == resolvedName && !r.IsDeleted, cancellationToken);
+
+        if (repository == null)
+            return JsonSerializer.Serialize(new { error = true, message = $"Repository {resolvedOwner}/{resolvedName} not found" });
+
+        var gitTool = CreateGitTool(repoOptions.Value, resolvedOwner!, resolvedName!);
+        if (gitTool == null)
+            return JsonSerializer.Serialize(new { error = true, message = "Repository workspace not found on server" });
+
+        var results = await gitTool.GrepAsync(pattern, glob, caseSensitive, contextLines, maxResults, cancellationToken);
+
+        return JsonSerializer.Serialize(new
+        {
+            repository = $"{resolvedOwner}/{resolvedName}",
+            pattern,
+            matchCount = results.Length,
+            results = results.Select(r => new
+            {
+                file = r.FilePath,
+                line = r.LineNumber,
+                content = r.LineContent,
+                context = r.Context
+            })
         });
     }
 
@@ -266,6 +492,15 @@ public class McpRepositoryTools
         }
 
         return null;
+    }
+
+    private static GitTool? CreateGitTool(RepositoryAnalyzerOptions options, string owner, string repo)
+    {
+        var repoPath = BuildRepositoryPath(options, owner, repo);
+        if (!Directory.Exists(repoPath))
+            return null;
+        try { return new GitTool(repoPath); }
+        catch { return null; }
     }
 
     private static async Task<string?> BuildSearchSummaryAsync(
