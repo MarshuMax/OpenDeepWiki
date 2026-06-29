@@ -206,8 +206,8 @@ function SidebarTree({
                   className={cn(
                     "block min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-[13px] leading-5 transition-colors",
                     isActive
-                      ? "bg-primary font-medium text-primary-foreground shadow-sm"
-                      : "text-foreground/80 hover:bg-muted hover:text-foreground"
+                      ? "bg-primary/15 font-medium text-primary border border-primary/25"
+                      : "text-foreground/80 hover:bg-muted hover:text-foreground border border-transparent"
                   )}
                 >
                   {node.title}
@@ -443,18 +443,25 @@ export function RepoShell({
 
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-background">
-      <div className="shrink-0 border-b border-border/70 bg-background/95 backdrop-blur">
+      <div className="shrink-0 border-b border-border/70 bg-card/80 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3 lg:px-6">
           <div className="min-w-0">
             <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
               {t("repository.wikiTitle")}
             </div>
-            <div className="truncate text-base font-semibold sm:text-lg">{title}</div>
+            <a
+              href={`https://github.com/${owner}/${repo}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="truncate text-base font-semibold transition-colors hover:text-primary sm:text-lg"
+            >
+              {title}
+            </a>
           </div>
           <Link
             href="/"
             aria-label={t("backToHome")}
-            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-border bg-background px-3 text-sm text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-border bg-background px-3 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
           >
             <Home className="h-4 w-4" />
             <span className="hidden sm:inline">{t("backToHome")}</span>
@@ -464,7 +471,7 @@ export function RepoShell({
 
       <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-5 overflow-hidden px-4 py-5 lg:flex-row lg:px-5">
         <aside className="min-h-0 w-full shrink-0 lg:w-72">
-          <div className="flex max-h-[38svh] min-h-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card p-3 shadow-sm lg:h-full lg:max-h-none">
+          <div className="paper-texture flex max-h-[38svh] min-h-0 flex-col overflow-hidden rounded-xl border border-border/70 p-3 shadow-sm lg:h-full lg:max-h-none">
             {sidebarBanner}
             <div className="wiki-scrollbar mt-3 min-h-0 overflow-y-auto border-t border-border/70 pt-3 pr-1">
               <SidebarTree
@@ -480,7 +487,7 @@ export function RepoShell({
         </aside>
 
         <main className="min-h-0 min-w-0 flex-1">
-          <div className="wiki-scrollbar h-full min-h-0 overflow-y-auto rounded-xl border border-border/70 bg-card p-4 shadow-sm xl:overflow-hidden sm:p-5">
+          <div className="wiki-scrollbar h-full min-h-0 overflow-y-auto rounded-xl border border-border/70 paper-texture p-4 shadow-sm xl:overflow-hidden sm:p-5">
             {isLoading ? (
               <div className="flex h-full items-center justify-center py-20">
                 <div className="size-7 animate-spin rounded-full border-b-2 border-primary" />

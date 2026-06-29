@@ -4,6 +4,7 @@ import { fetchRepoDoc, fetchRepoTree } from "@/lib/repository-api";
 import { extractHeadings } from "@/lib/markdown";
 import { MarkdownRenderer } from "@/components/repo/markdown-renderer";
 import { SourceFiles } from "@/components/repo/source-files";
+import { TocScrollSpy } from "@/components/repo/toc-scroll-spy";
 import { buildRepoDocPath, decodeRouteSegment } from "@/lib/repo-route";
 import type { RepoTreeNode } from "@/types/repository";
 import {
@@ -180,18 +181,23 @@ export default async function RepoDocPage({ params, searchParams }: RepoDocPageP
           files={doc.sourceFiles || []} 
           branch={branch}
         />
+        <TocScrollSpy />
       </article>
       {headings.length > 0 && (
         <aside className="xl:flex xl:min-h-0 xl:w-64 xl:shrink-0">
-          <div className="wiki-scrollbar rounded-xl border border-border/70 bg-muted/20 p-3 xl:h-full xl:min-h-0 xl:overflow-y-auto">
-            <div className="mb-2 text-sm font-semibold">{t("repository.tableOfContents")}</div>
+          <div className="wiki-scrollbar w-full rounded-xl border border-border/70 bg-muted/30 p-3 xl:h-full xl:min-h-0 xl:overflow-y-auto">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+              <span className="h-3 w-1 rounded-full bg-primary" />
+              {t("repository.tableOfContents")}
+            </div>
             <nav className="space-y-1.5">
               {headings.map((heading) => (
                 <a
                   key={heading.id}
                   href={`#${heading.id}`}
-                  className="block text-[13px] leading-5 text-muted-foreground hover:text-foreground"
-                  style={{ paddingLeft: `${(heading.level - 1) * 12}px` }}
+                  data-toc-link={heading.id}
+                  className="toc-link block border-l-2 border-transparent text-[13px] leading-5 text-muted-foreground transition-colors hover:text-foreground hover:border-primary/40"
+                  style={{ paddingLeft: `${(heading.level - 1) * 12 + 8}px` }}
                 >
                   {heading.text}
                 </a>

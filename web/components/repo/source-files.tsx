@@ -75,22 +75,18 @@ export function SourceFiles({ files, gitUrl, branch }: SourceFilesProps) {
   }
   
   return (
-    <div className="mt-12 pt-8 border-t border-fd-border">
-      <div className="flex items-center gap-2 mb-4">
-        <FileCode2 className="h-5 w-5 text-fd-muted-foreground" />
-        <h3 className="text-lg font-semibold text-fd-foreground">
-          Sources
-        </h3>
-        <span className="text-sm text-fd-muted-foreground">
-          ({files.length} files)
-        </span>
+    <div className="mt-12 border-t border-border pt-8">
+      <div className="mb-4 flex items-center gap-2">
+        <FileCode2 className="h-5 w-5 text-primary" />
+        <h3 className="text-lg font-semibold text-foreground">Sources</h3>
+        <span className="text-sm text-muted-foreground">({files.length} files)</span>
       </div>
-      
+
       <div className="space-y-4">
         {groupedFiles.map(([dir, dirFiles]) => (
-          <div key={dir} className="space-y-1">
+          <div key={dir} className="space-y-1.5">
             {groupedFiles.length > 1 && (
-              <div className="text-xs font-medium text-fd-muted-foreground uppercase tracking-wide">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {dir}
               </div>
             )}
@@ -98,19 +94,19 @@ export function SourceFiles({ files, gitUrl, branch }: SourceFilesProps) {
               {dirFiles.map(file => {
                 const fileName = file.split("/").pop() || file;
                 const fileUrl = buildFileUrl(defaultGitUrl, currentBranch, file);
-                
+
                 return (
                   <a
                     key={file}
                     href={fileUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-sm bg-fd-secondary hover:bg-fd-accent rounded-md text-fd-foreground transition-colors group"
+                    className="group inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-secondary/50 px-2.5 py-1 text-sm text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5"
                     title={file}
                   >
-                    <FileCode2 className="h-3.5 w-3.5 text-fd-muted-foreground" />
+                    <FileCode2 className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="max-w-[200px] truncate">{fileName}</span>
-                    <ExternalLink className="h-3 w-3 text-fd-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                   </a>
                 );
               })}
